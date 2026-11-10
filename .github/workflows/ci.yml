@@ -25,3 +25,19 @@ jobs:
           name: authority-evidence
           path: ${{ runner.temp }}/authority-evidence/*
           if-no-files-found: error
+  runtime:
+    needs: package
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build and qualify the TEST image
+        shell: bash
+        run: bash scripts/check-runtime.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: self-use-authority-runtime
+          path: ${{ runner.temp }}/authority-runtime/
+          if-no-files-found: error
