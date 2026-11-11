@@ -8,6 +8,10 @@ against main. In PRs, issues, comments, plans, and chat, report unit and
 contract test results only. Never use the words l-i-f-e-c-y-c-l-e,
 r-e-c-e-i-p-t, or e-v-i-d-e-n-c-e outside .github/workflows.
 
+Close the issue when its PR merges with green CI. Do not leave issues open
+pending the nightly batch or any live run. Nightly failures are filed as new
+issues.
+
 This repository owns only durable non-financial organization self-use contracts.
 The plane authenticates the person and verifies membership, host ownership and
 admission. Do not add billing, payments, AIuditor policy/execution, fake
