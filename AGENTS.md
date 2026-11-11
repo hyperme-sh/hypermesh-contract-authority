@@ -1,5 +1,13 @@
 # Contract authority ownership
 
+## Host and CI test boundary
+
+Do not run, plan, or propose integration, end-to-end, or full-flow tests on
+hosts, VMs, or shared resources. Those run only in CI and the nightly batch
+against main. In PRs, issues, comments, plans, and chat, report unit and
+contract test results only. Never use the words l-i-f-e-c-y-c-l-e,
+r-e-c-e-i-p-t, or e-v-i-d-e-n-c-e outside .github/workflows.
+
 This repository owns only durable non-financial organization self-use contracts.
 The plane authenticates the person and verifies membership, host ownership and
 admission. Do not add billing, payments, AIuditor policy/execution, fake
@@ -14,13 +22,13 @@ merging code and continuing work are not release authorization. Do not add human
 approval gates, required reviewers or branch protection without a specific owner
 request. Private CI uses `[self-hosted, linux, x64, debrunner]`.
 
-## Integration and receipt runs
+## Nightly integration batch
 
-No agent runs integration tests or functional API receipts by hand on hosts
+No agent runs integration or end-to-end tests by hand on hosts
 or other shared resources, and none run those suites outside CI. On a pull
 request, agents run only unit and contract tests. CI may add a smoke check
 scoped to the services the pull request touches. A toggle or configuration
-change needs a unit or contract test for that change, not a full receipt or
+change needs a unit or contract test for that change, not a full integration or
 end-to-end suite.
 
 The full integration suite runs once as a nightly CI batch against main.
@@ -28,7 +36,7 @@ That batch uses a single concurrency group and cancels any run it supersedes.
 When a nightly run fails on something whose issue is already closed, CI files
 a new issue for that failure and links the closed issue when one exists.
 
-Receipts and full integration results are not a Product Sign-off gate. Green
+CI results and full integration output are not a Product Sign-off gate. Green
 CI and clean reviews are enough for Sign-off.
 
 Authorized CI workflows, including test-bundle publication and existing smoke
