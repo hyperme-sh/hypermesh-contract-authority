@@ -33,14 +33,18 @@ class Fulfill(BaseModel):
 
 
 class Ledger:
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str, *, migrate: bool = False):
         if not dsn.startswith(("postgresql://", "postgres://")):
             raise ValueError("A PostgreSQL connection URL is required")
         self.dsn = dsn
         with self.connect() as db:
-            # Serialize additive schema creation across starting replicas.
-            db.execute("SELECT pg_advisory_xact_lock(743286192)")
-            db.execute("CREATE TABLE IF NOT EXISTS contracts (tenant TEXT NOT NULL, lease TEXT NOT NULL, id TEXT NOT NULL UNIQUE, request TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(tenant,lease))")
+            if migrate:
+                # Only the deployment migrator receives DDL credentials.
+                db.execute("SELECT pg_advisory_xact_lock(743286192)")
+                db.execute("CREATE TABLE IF NOT EXISTS contracts (tenant TEXT NOT NULL, lease TEXT NOT NULL, id TEXT NOT NULL UNIQUE, request TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(tenant,lease))")
+            else:
+                db.execute("SELECT tenant,lease,id,request,record FROM contracts LIMIT 0")
+
 
     def connect(self):
         return psycopg.connect(self.dsn, connect_timeout=10)
@@ -122,3 +126,8 @@ def main():
         raise ValueError("CONTRACT_AUTHORITY_DATABASE_URL_FILE is required")
     dsn = Path(connection_file).read_text().strip()
     uvicorn.run(create_app(dsn=dsn, token=token), host="0.0.0.0", port=8080, access_log=False)
+
+
+def migrate():
+    connection_file = os.environ["CONTRACT_AUTHORITY_MIGRATION_URL_FILE"]
+    Ledger(Path(connection_file).read_text().strip(), migrate=True)

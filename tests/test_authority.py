@@ -22,7 +22,7 @@ def terms(**extra):
 @pytest.fixture
 def storage():
     dsn = os.environ["AUTHORITY_TEST_DATABASE_URL"]
-    ledger = Ledger(dsn)
+    ledger = Ledger(dsn, migrate=True)
     with ledger.connect() as db:
         db.execute("TRUNCATE contracts")
     return dsn

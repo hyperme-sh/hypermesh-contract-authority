@@ -14,8 +14,8 @@ IDs, changed parties, expired replay, and attempts to extend the original hour.
 
 PostgreSQL stores a unique tenant/lease binding in the authority's own database.
 Transaction-scoped locks preserve the original record across concurrent requests
-and process restarts. Startup applies an additive table migration and fails when
-storage is unavailable. There is no fallback store.
+and process restarts. Deployment applies an additive table migration with a separate migration role.
+Runtime startup only checks the existing schema and fails when storage is unavailable. There is no fallback store.
 
 Run with Python 3.13 and uv:
 
@@ -24,6 +24,8 @@ uv sync --frozen --no-dev
 # Generate your own secret file; use a private directory and keep its value out of logs.
 export CONTRACT_AUTHORITY_TOKEN_FILE=/absolute/private/path/authority-token
 export CONTRACT_AUTHORITY_DATABASE_URL_FILE=/run/secrets/authority-database-url
+# Deployment step with the separate migration credential:
+CONTRACT_AUTHORITY_MIGRATION_URL_FILE=/run/secrets/authority-migration-url uv run --frozen --no-dev hypermesh-contract-authority-migrate
 uv run --frozen --no-dev hypermesh-contract-authority
 ```
 
