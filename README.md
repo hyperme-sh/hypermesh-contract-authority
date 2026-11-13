@@ -57,9 +57,11 @@ database. Preserve the old store for rollback investigation. If any unexpired
 contract remains, stop writes and use the separate operator tool before cutover:
 
 ```sh
-uv run python tools/import_contracts.py /private/legacy.db --connection-file /run/secrets/authority-database-url
+uv run python tools/import_contracts.py /private/legacy.db --connection-file /run/secrets/authority-migration-url
 ```
 
+Use the separate migration credential after applying the schema; the serving role
+intentionally lacks the exclusive-lock privileges required for import.
 The tool reads a consistent legacy snapshot, validates all rows and imports in
 one transaction. Repeating an identical import changes nothing; conflicting or
 corrupt input fails without partial records. IDs, parties and timestamps remain

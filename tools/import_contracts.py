@@ -47,7 +47,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
-    parser.add_argument('--connection-file', type=Path, required=True)
+    parser.add_argument('--connection-file', type=Path, required=True, help='Private migration-role URL file; runtime permissions are insufficient')
     args = parser.parse_args()
     import_contracts(args.source, args.connection_file.read_text().strip())
     print('Import committed')
