@@ -6,13 +6,12 @@ payment, or impersonate an AIuditor market writer.
 """
 from __future__ import annotations
 
-from contextlib import closing
 from datetime import UTC, datetime, timedelta
 import hmac
 import json
 import os
 from pathlib import Path
-import sqlite3
+import psycopg
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -34,33 +33,28 @@ class Fulfill(BaseModel):
 
 
 class Ledger:
-    def __init__(self, path: Path):
-        if str(path) == ":memory:":
-            raise ValueError("Contract authority requires durable storage")
-        self.path = path
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # Private directory is the storage boundary; WAL and SHM inherit it.
-        if path.parent.stat().st_mode & 0o077:
-            raise ValueError("Contract storage directory must be private (0700)")
-        with closing(self.connect()) as db:
-            db.execute("PRAGMA journal_mode=WAL")
+    def __init__(self, dsn: str):
+        if not dsn.startswith(("postgresql://", "postgres://")):
+            raise ValueError("A PostgreSQL connection URL is required")
+        self.dsn = dsn
+        with self.connect() as db:
+            # Serialize additive schema creation across starting replicas.
+            db.execute("SELECT pg_advisory_xact_lock(743286192)")
             db.execute("CREATE TABLE IF NOT EXISTS contracts (tenant TEXT NOT NULL, lease TEXT NOT NULL, id TEXT NOT NULL UNIQUE, request TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(tenant,lease))")
-        path.chmod(0o600)
 
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
-        db.execute("PRAGMA synchronous=FULL")
-        return db
+        return psycopg.connect(self.dsn, connect_timeout=10)
 
     def fulfill(self, tenant: UUID, body: Fulfill, now: datetime | None = None):
         if set(body.meters) != {"wall_time", "capacity_block"}:
             raise HTTPException(422, "Self-use requires wall_time and capacity_block")
         clock = now or datetime.now(UTC)
         request = json.dumps(body.model_dump(mode="json", exclude={"contract_id"}) | {"meters": sorted(body.meters)}, sort_keys=True)
-        with closing(self.connect()) as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.connect() as db:
+            # A transaction-scoped key lock also covers the absent-row case.
+            db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"{tenant}:{body.lease_id}",))
             try:
-                row = db.execute("SELECT request, record FROM contracts WHERE tenant=? AND lease=?", (str(tenant), str(body.lease_id))).fetchone()
+                row = db.execute("SELECT request, record FROM contracts WHERE tenant=%s AND lease=%s", (str(tenant), str(body.lease_id))).fetchone()
                 if row:
                     record = json.loads(row[1])
                     if row[0] != request or (body.contract_id and str(body.contract_id) != record["id"]):
@@ -77,7 +71,7 @@ class Ledger:
                         "signed_by": SIGNER, "signed_at": clock.isoformat(),
                         "until": (clock + timedelta(hours=1)).isoformat(), "protocol": PROTOCOL,
                     }
-                    db.execute("INSERT INTO contracts VALUES (?,?,?,?,?)", (str(tenant), str(body.lease_id), record["id"], request, json.dumps(record, sort_keys=True)))
+                    db.execute("INSERT INTO contracts VALUES (%s,%s,%s,%s,%s)", (str(tenant), str(body.lease_id), record["id"], request, json.dumps(record, sort_keys=True)))
                 db.execute("COMMIT")
                 return record
             except BaseException:
@@ -85,10 +79,10 @@ class Ledger:
                 raise
 
 
-def create_app(*, path: Path, token: str) -> FastAPI:
+def create_app(*, dsn: str, token: str) -> FastAPI:
     if len(token) < 32 or token.strip() != token:
         raise ValueError("A locally generated authority token of at least 32 characters is required")
-    ledger = Ledger(path)
+    ledger = Ledger(dsn)
     app = FastAPI(title="Hypermesh self-use contract authority", docs_url=None, redoc_url=None)
 
     def authenticate(value):
@@ -97,7 +91,7 @@ def create_app(*, path: Path, token: str) -> FastAPI:
 
     @app.get("/health")
     def health():
-        with closing(ledger.connect()) as db:
+        with ledger.connect() as db:
             db.execute("SELECT count(*) FROM contracts").fetchone()
         return {"status": "ok"}
 
@@ -111,7 +105,7 @@ def create_app(*, path: Path, token: str) -> FastAPI:
         authenticate(x_internal_token)
         try:
             return ledger.fulfill(x_tenant_id, body)
-        except sqlite3.Error:
+        except psycopg.Error:
             raise HTTPException(503, "Contract storage unavailable") from None
 
     return app
@@ -123,5 +117,8 @@ def main():
     if not token_file:
         raise ValueError("CONTRACT_AUTHORITY_TOKEN_FILE is required")
     token = Path(token_file).read_text().strip()
-    path = Path(os.environ.get("CONTRACT_AUTHORITY_DB", "/data/contracts.sqlite3"))
-    uvicorn.run(create_app(path=path, token=token), host="0.0.0.0", port=8080, access_log=False)
+    connection_file = os.environ.get("CONTRACT_AUTHORITY_DATABASE_URL_FILE")
+    if not connection_file:
+        raise ValueError("CONTRACT_AUTHORITY_DATABASE_URL_FILE is required")
+    dsn = Path(connection_file).read_text().strip()
+    uvicorn.run(create_app(dsn=dsn, token=token), host="0.0.0.0", port=8080, access_log=False)

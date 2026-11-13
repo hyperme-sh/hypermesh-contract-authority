@@ -9,6 +9,19 @@ jobs:
   package:
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: authority
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: authority
+        ports: ["5432/tcp"]
+        options: >-
+          --health-cmd "pg_isready -U authority -d authority"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      AUTHORITY_TEST_DATABASE_URL: postgresql://authority:isolated-ci-only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/authority
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -18,14 +31,13 @@ jobs:
           version: '0.11.26'
           python-version: '3.13'
       - run: bash scripts/check-package.sh
-        env:
-          EVIDENCE_DIR: ${{ runner.temp }}/authority-evidence
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: authority-evidence
-          path: ${{ runner.temp }}/authority-evidence/*
-          if-no-files-found: error
   runtime:
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: authority-runtime-${{ github.ref }}
+      cancel-in-progress: false
     needs: package
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -33,11 +45,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Build and qualify the TEST image
+      - name: Build container
+        run: docker build --label "org.opencontainers.image.revision=${GITHUB_SHA}" -t ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test .
+      - name: Publish moving TEST channel
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/authority-docker-${{ github.run_id }}
         shell: bash
-        run: bash scripts/check-runtime.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: self-use-authority-runtime
-          path: ${{ runner.temp }}/authority-runtime/
-          if-no-files-found: error
+        run: |
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test
