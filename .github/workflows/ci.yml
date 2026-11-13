@@ -20,8 +20,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U authority -d authority"
           --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      AUTHORITY_TEST_DATABASE_URL: postgresql://authority:isolated-ci-only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/authority
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -31,6 +29,8 @@ jobs:
           version: '0.11.26'
           python-version: '3.13'
       - run: bash scripts/check-package.sh
+        env:
+          AUTHORITY_TEST_DATABASE_URL: postgresql://authority:isolated-ci-only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/authority
   runtime:
     permissions:
       contents: read
