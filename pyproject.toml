@@ -9,10 +9,11 @@ description = "Durable non-financial organization self-use contract authority"
 requires-python = ">=3.13"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1"]
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "psycopg[binary]>=3.2,<4"]
 
 [project.scripts]
 hypermesh-contract-authority = "hypermesh_contract_authority:main"
+hypermesh-contract-authority-migrate = "hypermesh_contract_authority:migrate"
 
 [dependency-groups]
 dev = ["pytest>=9,<10", "httpx>=0.28,<1"]

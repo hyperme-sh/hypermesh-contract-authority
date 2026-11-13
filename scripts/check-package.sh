@@ -12,6 +12,7 @@ uv pip sync --python "$python" "$scratch/requirements.txt"
 uv build --out-dir "$scratch/dist"
 mkdir "$scratch/run"
 cp -R tests "$scratch/run/tests"
+cp -R tools "$scratch/run/tools"
 check() {
   (cd "$scratch/run" && "$python" -I -m pytest tests -q --junitxml="$scratch/$1.xml")
 }

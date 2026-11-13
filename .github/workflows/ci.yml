@@ -9,6 +9,17 @@ jobs:
   package:
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: authority
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: authority
+        ports: ["5432/tcp"]
+        options: >-
+          --health-cmd "pg_isready -U authority -d authority"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -19,25 +30,59 @@ jobs:
           python-version: '3.13'
       - run: bash scripts/check-package.sh
         env:
-          EVIDENCE_DIR: ${{ runner.temp }}/authority-evidence
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: authority-evidence
-          path: ${{ runner.temp }}/authority-evidence/*
-          if-no-files-found: error
+          CONTRACT_AUTHORITY_TEST_DATABASE: "1"
+          AUTHORITY_TEST_DATABASE_URL: postgresql://authority:isolated-ci-only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/authority
   runtime:
+    if: github.event_name == 'pull_request'
     needs: package
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Build and qualify the TEST image
-        shell: bash
-        run: bash scripts/check-runtime.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Build PR container without publication credentials
+        run: docker build -t "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" .
+      - name: Remove job-owned build tag
+        if: always()
+        run: docker image rm "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1 || true
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: authority-publish-main
+      cancel-in-progress: false
+    needs: package
+    # Publishing is enabled only for this public repository on a fresh hosted VM.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          name: self-use-authority-runtime
-          path: ${{ runner.temp }}/authority-runtime/
-          if-no-files-found: error
+          persist-credentials: false
+      - name: Build container
+        run: docker build --label "org.opencontainers.image.revision=${GITHUB_SHA}" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" .
+      - name: Publish moving TEST channel
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/authority-docker-${{ github.run_id }}
+        shell: bash
+        run: |
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          mkdir -m 700 "$DOCKER_CONFIG"
+          current=$(curl --fail --silent --show-error -H "Authorization: Bearer $GHCR_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/heads/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["object"]["sha"])')
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            echo "A newer main revision owns the TEST channel; skipping stale publication."
+            exit 0
+          fi
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test
+          docker push ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test
+      - name: Remove job-owned build tag
+        if: always()
+        run: docker image rm "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1 || true

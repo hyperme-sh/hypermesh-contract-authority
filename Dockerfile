@@ -5,6 +5,5 @@ COPY src src
 RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.13-slim-bookworm@sha256:281d39ff02e3b389401586134ff9e6572954687822a58055ec07a60ded4e0b7f
 COPY --from=build /app/.venv /app/.venv
-RUN mkdir /data && chmod 700 /data && chown 10001:10001 /data
 USER 10001:10001
 ENTRYPOINT ["/app/.venv/bin/hypermesh-contract-authority"]
