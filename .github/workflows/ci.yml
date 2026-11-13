@@ -33,11 +33,28 @@ jobs:
           CONTRACT_AUTHORITY_TEST_DATABASE: "1"
           AUTHORITY_TEST_DATABASE_URL: postgresql://authority:isolated-ci-only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/authority
   runtime:
+    if: github.event_name == 'pull_request'
+    needs: package
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build PR container without publication credentials
+        run: docker build -t "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" .
+      - name: Remove job-owned build tag
+        if: always()
+        run: docker image rm "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1 || true
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
     concurrency:
-      group: authority-runtime-${{ github.ref }}
+      group: authority-publish-main
       cancel-in-progress: false
     needs: package
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
