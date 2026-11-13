@@ -30,7 +30,11 @@ uv run --frozen --no-dev hypermesh-contract-authority
 ```
 
 Deliver the connection URL from a Key Vault reference into a private mounted file.
-Use the authority owner role and its database only. Generate at least 32 random secret
+Use the authority owner role and its database only. Connections always enforce
+`sslmode=verify-full`; deliver a trusted CA file through `sslrootcert` in the URL
+or the libpq CA setting. The explicit `CONTRACT_AUTHORITY_TEST_DATABASE=1` setting
+allows plaintext only to loopback or the declared TEST PostgreSQL container host;
+it is for isolated CI/TEST networks and must not be set in production. Generate at least 32 random secret
 characters locally and share the token only with the trusted plane. The service
 listens on port 8080; keep it on a private service network or protect transport
 with TLS. `/health` reports storage availability and requires no token.

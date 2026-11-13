@@ -47,7 +47,16 @@ class Ledger:
 
 
     def connect(self):
-        return psycopg.connect(self.dsn, connect_timeout=10)
+        # URL delivery does not authenticate the network endpoint. Production
+        # always verifies the server certificate and hostname against a trusted CA.
+        mode = "verify-full"
+        if os.environ.get("CONTRACT_AUTHORITY_TEST_DATABASE") == "1":
+            options = psycopg.conninfo.conninfo_to_dict(self.dsn)
+            if (options.get("host") not in {"127.0.0.1", "::1", "hypermesh-test-reset-v1-postgres"}
+                    or options.get("hostaddr") or options.get("service")):
+                raise ValueError("Plaintext TEST transport requires the declared isolated database host")
+            mode = "disable"
+        return psycopg.connect(self.dsn, connect_timeout=10, sslmode=mode)
 
     def fulfill(self, tenant: UUID, body: Fulfill, now: datetime | None = None):
         if set(body.meters) != {"wall_time", "capacity_block"}:

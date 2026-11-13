@@ -180,3 +180,15 @@ def test_service_package_has_no_legacy_store():
     source = inspect.getsource(hypermesh_contract_authority)
     assert "sqlite" not in source.lower()
     assert "CONTRACT_AUTHORITY_DB" not in source
+
+
+def test_remote_database_transport_always_verifies_tls(monkeypatch):
+    from unittest.mock import patch
+    monkeypatch.delenv("CONTRACT_AUTHORITY_TEST_DATABASE", raising=False)
+    ledger = object.__new__(Ledger)
+    ledger.dsn = "postgresql://owner:secret@database.example/authority?sslmode=disable"
+    with patch("hypermesh_contract_authority.psycopg.connect") as connect:
+        ledger.connect()
+    assert connect.call_args.kwargs["sslmode"] == "verify-full"
+    monkeypatch.setenv("CONTRACT_AUTHORITY_TEST_DATABASE", "1")
+    with pytest.raises(ValueError): ledger.connect()
