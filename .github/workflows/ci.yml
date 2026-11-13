@@ -56,5 +56,10 @@ jobs:
         run: |
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           mkdir -m 700 "$DOCKER_CONFIG"
+          current=$(curl --fail --silent --show-error -H "Authorization: Bearer $GHCR_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/heads/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["object"]["sha"])')
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            echo "A newer main revision owns the TEST channel; skipping stale publication."
+            exit 0
+          fi
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test
