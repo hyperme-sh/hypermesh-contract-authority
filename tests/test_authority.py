@@ -194,7 +194,8 @@ def test_remote_database_transport_always_verifies_tls(monkeypatch):
     with pytest.raises(ValueError): ledger.connect()
 
 
-def test_expiry_is_checked_after_waiting_for_the_lease_lock(storage, monkeypatch):
+@pytest.mark.parametrize("delayed_query", ["pg_advisory_xact_lock", "SELECT request, record"])
+def test_expiry_is_checked_after_database_waits(storage, monkeypatch, delayed_query):
     import hypermesh_contract_authority as authority
     ledger=Ledger(storage); tenant=uuid4(); body=Fulfill(**terms())
     issued=datetime.now(UTC)
@@ -210,7 +211,7 @@ def test_expiry_is_checked_after_waiting_for_the_lease_lock(storage, monkeypatch
         def __enter__(self): self.db.__enter__(); return self
         def __exit__(self,*args): return self.db.__exit__(*args)
         def execute(self,query,*args):
-            if 'pg_advisory_xact_lock' in query: Clock.current=issued+timedelta(hours=1)
+            if delayed_query in query: Clock.current=issued+timedelta(hours=1)
             return self.db.execute(query,*args)
     monkeypatch.setattr(authority,'datetime',Clock)
     monkeypatch.setattr(ledger,'connect',DelayedLock)

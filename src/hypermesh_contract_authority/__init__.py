@@ -65,9 +65,9 @@ class Ledger:
         with self.connect() as db:
             # A transaction-scoped key lock also covers the absent-row case.
             db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"{tenant}:{body.lease_id}",))
-            clock = now or datetime.now(UTC)
             try:
                 row = db.execute("SELECT request, record FROM contracts WHERE tenant=%s AND lease=%s", (str(tenant), str(body.lease_id))).fetchone()
+                clock = now or datetime.now(UTC)
                 if row:
                     record = json.loads(row[1])
                     if row[0] != request or (body.contract_id and str(body.contract_id) != record["id"]):
