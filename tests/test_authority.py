@@ -192,3 +192,27 @@ def test_remote_database_transport_always_verifies_tls(monkeypatch):
     assert connect.call_args.kwargs["sslmode"] == "verify-full"
     monkeypatch.setenv("CONTRACT_AUTHORITY_TEST_DATABASE", "1")
     with pytest.raises(ValueError): ledger.connect()
+
+
+def test_expiry_is_checked_after_waiting_for_the_lease_lock(storage, monkeypatch):
+    import hypermesh_contract_authority as authority
+    ledger=Ledger(storage); tenant=uuid4(); body=Fulfill(**terms())
+    issued=datetime.now(UTC)
+    ledger.fulfill(tenant,body,issued)
+    class Clock(datetime):
+        current=issued+timedelta(minutes=59)
+        @classmethod
+        def now(cls, tz=None): return cls.current
+    # Explicit clock/lock-wait substitution; persistence remains real PostgreSQL.
+    connect=ledger.connect
+    class DelayedLock:
+        def __init__(self): self.db=connect()
+        def __enter__(self): self.db.__enter__(); return self
+        def __exit__(self,*args): return self.db.__exit__(*args)
+        def execute(self,query,*args):
+            if 'pg_advisory_xact_lock' in query: Clock.current=issued+timedelta(hours=1)
+            return self.db.execute(query,*args)
+    monkeypatch.setattr(authority,'datetime',Clock)
+    monkeypatch.setattr(ledger,'connect',DelayedLock)
+    with pytest.raises(HTTPException) as expired: ledger.fulfill(tenant,body)
+    assert expired.value.status_code == 409

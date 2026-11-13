@@ -61,11 +61,11 @@ class Ledger:
     def fulfill(self, tenant: UUID, body: Fulfill, now: datetime | None = None):
         if set(body.meters) != {"wall_time", "capacity_block"}:
             raise HTTPException(422, "Self-use requires wall_time and capacity_block")
-        clock = now or datetime.now(UTC)
         request = json.dumps(body.model_dump(mode="json", exclude={"contract_id"}) | {"meters": sorted(body.meters)}, sort_keys=True)
         with self.connect() as db:
             # A transaction-scoped key lock also covers the absent-row case.
             db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"{tenant}:{body.lease_id}",))
+            clock = now or datetime.now(UTC)
             try:
                 row = db.execute("SELECT request, record FROM contracts WHERE tenant=%s AND lease=%s", (str(tenant), str(body.lease_id))).fetchone()
                 if row:
