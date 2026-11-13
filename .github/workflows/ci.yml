@@ -46,7 +46,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build container
-        run: docker build --label "org.opencontainers.image.revision=${GITHUB_SHA}" -t ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test .
+        run: docker build --label "org.opencontainers.image.revision=${GITHUB_SHA}" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" .
       - name: Publish moving TEST channel
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -62,4 +62,8 @@ jobs:
             exit 0
           fi
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test
           docker push ghcr.io/hyperme-sh/hypermesh-contract-authority/runtime:test
+      - name: Remove job-owned build tag
+        if: always()
+        run: docker image rm "authority-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1 || true
