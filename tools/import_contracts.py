@@ -20,7 +20,9 @@ def import_contracts(source: Path, dsn: str) -> int:
         body = Fulfill.model_validate_json(request)
         value = json.loads(record)
         start, end = (datetime.fromisoformat(value[key]) for key in ('signed_at', 'until'))
-        if (str(UUID(tenant)) != value['tenant_id'] or str(body.lease_id) != lease
+        if (set(value) != {'id','tenant_id','lease_id','parties','meters','rail','status','signed_by','signed_at','until','protocol'}
+                or set(body.meters) != {'wall_time','capacity_block'} or body.contract_id is not None
+                or str(UUID(tenant)) != value['tenant_id'] or str(body.lease_id) != lease
                 or value['lease_id'] != lease or str(UUID(identity)) != value['id']
                 or value['protocol'] != PROTOCOL or value['signed_by'] != SIGNER
                 or value['rail'] != 'self-use' or value['status'] != 'signed'

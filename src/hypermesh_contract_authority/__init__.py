@@ -95,8 +95,11 @@ def create_app(*, dsn: str, token: str) -> FastAPI:
 
     @app.get("/health")
     def health():
-        with ledger.connect() as db:
-            db.execute("SELECT count(*) FROM contracts").fetchone()
+        try:
+            with ledger.connect() as db:
+                db.execute("SELECT count(*) FROM contracts").fetchone()
+        except psycopg.Error:
+            raise HTTPException(503, "Contract storage unavailable") from None
         return {"status": "ok"}
 
     @app.get("/v1/meta")

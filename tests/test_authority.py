@@ -101,6 +101,7 @@ def test_corrupt_storage_and_weak_configuration_fail_closed(storage):
         with psycopg.connect(storage) as db: db.execute("DROP TABLE contracts")
         result = client.post("/v1/contracts/fulfill", headers={"X-Tenant-ID": str(uuid4()), "X-Internal-Token": TOKEN}, json=terms())
         assert result.status_code == 503
+        assert client.get("/health").status_code == 503
         assert TOKEN not in result.text and str(storage) not in result.text
 
 
@@ -153,3 +154,29 @@ def test_import_atomic_and_idempotent(storage, tmp_path):
         assert db.execute("SELECT count(*) FROM contracts").fetchone()[0] == 0
     source.write_bytes(b"corrupt database")
     with pytest.raises(sqlite3.DatabaseError): importer(source, storage)
+
+
+def test_runtime_starts_without_schema_privileges(storage):
+    from psycopg import sql
+    role = "test_runtime_" + uuid4().hex
+    with psycopg.connect(storage, autocommit=True) as db:
+        db.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        try:
+            db.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(role)))
+            db.execute(sql.SQL("GRANT SELECT,INSERT ON contracts TO {}").format(sql.Identifier(role)))
+            db.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                db.execute("CREATE TABLE forbidden_runtime_table(id integer)")
+            db.execute("SELECT tenant,lease,id,request,record FROM contracts LIMIT 0")
+        finally:
+            db.execute("RESET ROLE")
+            db.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+            db.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+def test_service_package_has_no_legacy_store():
+    import inspect
+    import hypermesh_contract_authority
+    source = inspect.getsource(hypermesh_contract_authority)
+    assert "sqlite" not in source.lower()
+    assert "CONTRACT_AUTHORITY_DB" not in source
